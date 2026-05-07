@@ -2,15 +2,24 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Project purpose
+
+This repo is a full simulation model for the **XSDS RAM module addon board** for the MiSTer FPGA project — a two-chip 128 MB SDR SDRAM module that plugs into a MiSTer host. The model has two consumers:
+
+1. **The MiSTer SDRAM-controller authors** — they tune their HDL controllers against this model to make sure they meet real-chip timing/protocol rules before going to silicon. So the model has to be *strict* about timing (it is, via `STRICT_TIMING=1`) and faithful about protocol corner cases — the whole point is to fail loudly when a controller does something a real chip would punish.
+2. **MiSTer core developers running open simulators (Verilator, GHDL, etc.)** — they want a drop-in 128 MB SDRAM peripheral they can attach to their core's testbench so the entire memory path is exercised in sim, not just the controller in isolation. So the model has to be portable across open-source simulators, not just commercial ones.
+
+When in doubt about a behavior decision, prefer matching real silicon (per the AS4C32M16SB datasheet in `ref/`) over convenience. Loose modeling defeats the controller-tuning use case.
+
 ## Repository scope
 
-The project's own source is exactly one SystemVerilog file: `xsds_128mbyte_sdram_model.sv`. There is no build system, no test harness, and no CI. The model is consumed by external simulation environments (e.g., the MiSTer FPGA project's verification flow). When running it, the user supplies their own simulator (Verilator, ModelSim, Questa, VCS, Xcelium, etc.) and testbench.
+The project's own source is exactly one SystemVerilog file: `xsds_128mbyte_sdram_model.sv`. There is no build system, no test harness, and no CI in this repo. The model is consumed by external simulation environments — when running it, the user supplies their own simulator (Verilator, GHDL with mixed-language flow, ModelSim, Questa, VCS, Xcelium, etc.) and testbench.
 
 Everything else in the tree is reference material, not project source:
 
 - `ref/AllianceMemory_512M_SDRAM_Bdie_AS4C32M16SB-7TXN-6TIN-7BIN_Rev1.2_March2020.pdf` — datasheet for the chip the model emulates. Authoritative source for the per-chip timing parameter defaults and the protocol/state-machine behavior in `as4c32m16sb_6tin_chip_model`.
 - `ref/sdram_xsds_3.0.pdf` — datasheet for the XSDS-style module form factor that the top-level `xsds_128mbyte_sdram_model` wrapper emulates (two-chip 128 MB module with shared bus + ChipSel).
-- `ref/mt48lc16m16a2.v`, `ref/IS42VM16400K.v`, and the top-level `mt48lc4m16a2.v` — vendor BFM Verilog models (Micron 256Mb, ISSI 64Mb LP, Micron 64Mb respectively). These are *reference implementations*, not part of the build. They illustrate how each vendor structures bank state, command pipelines, mode-register decode, and DQM/burst handling. Useful when sanity-checking that the project model handles a corner case the same way a known-good vendor model does. Do not edit them — they are upstream copies. The Micron 4Mx16 model lives at the repo root rather than in `ref/` (treat it as a reference model regardless of its location).
+- `ref/mt48lc16m16a2.v` and `ref/IS42VM16400K.v` — vendor BFM Verilog models (Micron 256Mb, ISSI 64Mb LP). These are *reference implementations*, not part of the build. They illustrate how each vendor structures bank state, command pipelines, mode-register decode, and DQM/burst handling. Useful when cross-checking that the project model handles a corner case the same way a known-good vendor model does. Do not edit them — they are upstream copies.
 
 The model is **simulation-only** — it uses `inout` DQ tri-state, `realtime` timing checks, `$error`/`$warning`/`$display`, a sparse associative-array memory, and SystemVerilog queues. Do not introduce constructs that would be fine in simulation but would silently change behavior here, and do not attempt to make any of it synthesizable.
 
