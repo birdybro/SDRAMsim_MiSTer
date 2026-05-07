@@ -32,9 +32,9 @@ The XSDS v3.0 board's 40-pin connector exposes **only**: `DQ[15:0]`, `A[12:0]`, 
 
 The third point is the sharpest controller-tuning hazard the model can expose. Existing MiSTer controllers keep `CS=0` always and use NOP (`RAS=CAS=WE=1`) for idle, so on the XSDS they only ever address chip 1 (the lower 64 MB). To reach the full 128 MB, a controller must (a) use `CS1` as a high address bit, *and* (b) be careful that any cycle where it drives `CS1=1` also drives RAS/CAS/WE to NOP — otherwise it's silently issuing commands to chip 2 instead of "deselecting." A controller that gets this wrong on the XSDS will appear fine on a single-chip module.
 
-### Wrapper-vs-hardware mismatch (TODO)
+### Wrapper-vs-hardware mapping
 
-The current `xsds_128mbyte_sdram_model` wrapper does **not** yet match the actual XSDS connector. It exposes a separate `ChipSel` input, allows `Cs_n=1` to deselect both chips, and exposes `Cke`/`Ldqm`/`Udqm` ports — none of which exist on the connector. The wrapper needs to be rewritten so its port list matches the 40-pin connector exactly, and so it synthesizes the rest internally (CKE tied high, DQM extracted from A[11:12], chip 1's CS = `Cs1`, chip 2's CS = `~Cs1`). The chip-level model stays as-is. See `TASKS.md`.
+The `xsds_128mbyte_sdram_model` wrapper now matches the 40-pin connector exactly. Ports: `Clk`, `Cs1_n`, `Ras_n`, `Cas_n`, `We_n`, `Ba`, `Addr`, `Dq`. Internally: `Cke` tied to `1'b1`; `Ldqm`/`Udqm` for both chips driven from `Addr[11]`/`Addr[12]`; chip 0's `Cs_n = Cs1_n`, chip 1's `Cs_n = ~Cs1_n` (mirroring the LVC1G04 inverter U3 on the board). The chip-level `as4c32m16sb_6tin_chip_model` keeps independent CKE/DQM ports because that's still the correct chip-level abstraction — it's reusable for non-XSDS testbenches where CKE and DQM *are* externally controllable.
 
 ### Reference-controller realities
 
