@@ -10,16 +10,9 @@ These were open architectural questions in earlier revisions of this file. Answe
 - ✅ **There is no separate ChipSel pin.** The connector exposes only `CS1`; an on-board `LVC1G04` inverter (U3) drives chip 2's `CS#` from `~CS1`. The hardware cannot deselect both chips simultaneously. To reach the full 128 MB, a controller has to use `CS1` as the high address bit *and* always drive RAS/CAS/WE = NOP encoding (`111`) when `CS1=1`, otherwise it'll silently route commands to chip 2 instead of idling.
 - ✅ **CKE is hardwired to VCC.** Power-down, self-refresh, and clock-suspend are physically impossible through the XSDS connector.
 
-## Top priority — wrapper rewrite
+## Top priority — wrapper rewrite ✅ done
 
-- [ ] **Rewrite the `xsds_128mbyte_sdram_model` wrapper to match the actual 40-pin XSDS connector.** Today's wrapper exposes ports the connector doesn't have (`ChipSel`, `Cke`, `Ldqm`, `Udqm`) and allows a "both chips deselected" state that the hardware cannot reach. The wrapper should:
-  - Expose only what the connector exposes: `DQ[15:0]`, `A[12:0]`, `BA[1:0]`, `CLK`, `RAS#`, `CAS#`, `WE#`, `Cs1` (one chip-select).
-  - Tie `Cke` high internally on both chips.
-  - Drive both chips' `Ldqm`/`Udqm` from `A[11]`/`A[12]`.
-  - Drive chip 0's `Cs_n` from `Cs1`, chip 1's `Cs_n` from `~Cs1`.
-  - Update `README.md` instantiation example and `CHIPSEL_ACTIVE_FOR_CHIP1` parameter (likely deletable now).
-  - Keep the chip-level `as4c32m16sb_6tin_chip_model` unchanged — it's still the right abstraction for non-XSDS testbenches.
-  - Optionally: keep the old wrapper alongside, renamed (e.g., `xsds_128mbyte_sdram_model_dev` for the more-permissive port list useful in early bring-up). Decide based on whether anyone has external testbenches already wired to the current ports.
+- [x] **Rewrite the `xsds_128mbyte_sdram_model` wrapper to match the actual 40-pin XSDS connector.** Landed: wrapper now exposes only connector signals (`Clk`, `Cs1_n`, `Ras_n`, `Cas_n`, `We_n`, `Ba`, `Addr`, `Dq`); `Cke` tied to `1'b1` internally; `Ldqm`/`Udqm` driven from `Addr[11]`/`Addr[12]`; chip 0's `Cs_n = Cs1_n`, chip 1's `Cs_n = ~Cs1_n`. Dead parameters (`CHIPSEL_ACTIVE_FOR_CHIP1`, `CHECK_BUS_CONTENTION`) removed; `WARN_TREFI`/`INIT_UNWRITTEN_TO_X` now forwarded. README example and chip-level model unchanged.
 
 ## Decision still pending
 
@@ -63,9 +56,9 @@ These are the rules MiSTer-style controllers most commonly trip:
 
 ## Module-wrapper gaps (XSDS-specific)
 
-- [ ] **No aggregate refresh status across the two chips.** Each chip independently tracks 8192/64 ms; if a controller refreshes only one ChipSel state, only that chip's checker fires. Add a `module_refresh_status()` task that reports both chips at end-of-test so testbenches can assert "all good."
-- [ ] **Bus-contention warning is combinational** and posts continuously while both selects assert. Convert to edge-triggered (once per event) so the log isn't flooded.
-- [ ] **No ChipSel-vs-command timing relationship checked** — ChipSel changing mid-burst during a same-cycle command isn't flagged. Lower priority; revisit if a real bug surfaces.
+- [ ] **No aggregate refresh status across the two chips.** Each chip independently tracks 8192/64 ms; if a controller refreshes only one Cs1_n state, only that chip's checker fires. Add a `module_refresh_status()` task that reports both chips at end-of-test so testbenches can assert "all good."
+- [x] ~~Bus-contention warning is combinational and posts continuously while both selects assert.~~ Resolved by the wrapper rewrite — `chip0_cs_n = Cs1_n` and `chip1_cs_n = ~Cs1_n` make both-selected structurally impossible. The warning was removed.
+- [x] ~~No ChipSel-vs-command timing relationship checked.~~ Obsolete: there is no separate `ChipSel`. `Cs1_n` flows directly into the chip-level command-decode pipeline, so any setup/hold or mid-burst-flip issues are caught by the chip model's own checks.
 
 ## Testbench affordances missing
 
