@@ -1,56 +1,60 @@
 `timescale 1ns/1ps
 
 // =============================================================================
-// XSDS-style 128 MByte SDRAM module simulation model
+// XSDS v3.0 128 MByte SDRAM module simulation model
 // =============================================================================
+// Models the XSDS RAM module addon board for the MiSTer FPGA platform — a
+// 40-pin SDRAM module containing two AS4C32M16SB-6TIN chips on a shared bus.
+//
 // Module capacity:
 //   128 MBytes = 1024 Mbits
 //
 // Physical memory:
-//   2x AS4C32M16SB-6TIN-compatible chips
+//   2 x AS4C32M16SB-6TIN chips
 //   each chip = 512 Mbits = 64 MBytes
+//   Per chip: 4 banks x 8192 rows x 1024 columns x 16 bits
 //
-// Per chip geometry:
-//   4 banks x 8192 rows x 1024 columns x 16 bits
+// Connector signals (matches XSDS v3.0 schematic, 40-pin header P1):
+//   Clk, Cs1_n, Ras_n, Cas_n, We_n, Ba[1:0], Addr[12:0], Dq[15:0]
 //
-// Shared module bus:
-//   DQ[15:0] is shared between both chips.
-//   CLK, CKE, RAS#, CAS#, WE#, BA[1:0], A[12:0], LDQM, UDQM are shared.
-//   ChipSel selects which physical 512 Mbit chip is active.
+// Hidden by the board (NOT on the connector):
+//   - CKE: tied to VCC permanently. No power-down / self-refresh / clock-
+//     suspend possible through this connector. Hardwired to 1'b1 internally.
+//   - DQML / DQMH: tied to Addr[11] / Addr[12] at the chip pins. The wrapper
+//     extracts those bits and drives the chip-level Ldqm / Udqm internally.
+//   - CS2: an internal-only net generated as ~Cs1_n via an LVC1G04 inverter
+//     (U3 on the schematic). Cs1_n IS the high chip-select bit.
 //
-// Addressing concept:
-//   The external SDRAM controller still presents one x16 SDR SDRAM-style bus.
-//   The extra module-level capacity comes from selecting chip 0 or chip 1.
-//   In a memory map, ChipSel is effectively the high physical chip-select bit.
+// Addressing the full 128 MB:
+//   Cs1_n=0 selects chip 0 (lower 64 MB); chip 1 sees CS=1 and ignores cmds.
+//   Cs1_n=1 selects chip 1 (upper 64 MB); chip 0 sees CS=1 and ignores cmds.
+//   The hardware can never deselect both chips. Idle cycles must drive
+//   {Ras_n, Cas_n, We_n} = 3'b111 (NOP) regardless of Cs1_n.
 //
 // Refresh:
 //   Each chip independently requires 8192 AUTO REFRESH commands per 64 ms.
-//   If ChipSel selects only one chip at a time, your controller/testbench must
-//   refresh both chip-select states.
+//   The controller must issue refreshes against both Cs1_n=0 and Cs1_n=1 to
+//   keep both chips alive.
+//
+// See CONTROLLER_GUIDE.md for protocol/timing rules a controller must follow.
 //
 // Simulation-only. Not synthesizable.
 // =============================================================================
 
 module xsds_128mbyte_sdram_model #(
-    parameter bit DEBUG                    = 1'b0,
-    parameter bit STRICT_TIMING            = 1'b1,
-
-    // ChipSel level that selects chip 1.
-    // With the default, ChipSel=0 selects chip0, ChipSel=1 selects chip1.
-    parameter bit CHIPSEL_ACTIVE_FOR_CHIP1 = 1'b1,
-
-    // If enabled, warns if both internal chips would ever drive DQ.
-    parameter bit CHECK_BUS_CONTENTION     = 1'b1
+    parameter bit DEBUG               = 1'b0,
+    parameter bit STRICT_TIMING       = 1'b1,
+    parameter bit WARN_TREFI          = 1'b1,
+    parameter bit INIT_UNWRITTEN_TO_X = 1'b1
 ) (
     input  wire        Clk,
-    input  wire        Cke,
 
-    // Common module chip select.
-    // When Cs_n=1, neither chip is selected.
-    input  wire        Cs_n,
-
-    // Physical 64 MB chip selector.
-    input  wire        ChipSel,
+    // Connector pin P1.33. Acts as the high chip-select bit:
+    //   Cs1_n=0 -> chip 0 (lower 64 MB) selected, chip 1 deselected.
+    //   Cs1_n=1 -> chip 0 deselected, chip 1 (upper 64 MB) selected.
+    // The board has no separate ChipSel; the on-board LVC1G04 inverter (U3)
+    // drives chip 1's CS# from ~Cs1_n. Both-chips-deselected is impossible.
+    input  wire        Cs1_n,
 
     input  wire        Ras_n,
     input  wire        Cas_n,
@@ -59,60 +63,58 @@ module xsds_128mbyte_sdram_model #(
     input  wire [1:0]  Ba,
     input  wire [12:0] Addr,
 
-    input  wire        Ldqm,
-    input  wire        Udqm,
-
     inout  wire [15:0] Dq
 );
 
-    wire chip1_selected;
-    wire chip0_cs_n;
-    wire chip1_cs_n;
+    // CKE is tied to VCC on the XSDS board.
+    wire chip_cke = 1'b1;
 
-    assign chip1_selected = (ChipSel == CHIPSEL_ACTIVE_FOR_CHIP1);
+    // DQML / DQMH are tied to Addr[11] / Addr[12] at the chip pins.
+    wire chip_ldqm = Addr[11];
+    wire chip_udqm = Addr[12];
 
-    assign chip0_cs_n = Cs_n |  chip1_selected;
-    assign chip1_cs_n = Cs_n | ~chip1_selected;
-
-    always @(*) begin
-        if (CHECK_BUS_CONTENTION && !chip0_cs_n && !chip1_cs_n) begin
-            $warning("%0t %m both SDRAM chips selected; shared DQ bus may contend", $time);
-        end
-    end
+    // Chip 0 takes Cs1_n directly; chip 1 takes the inverted Cs1_n,
+    // mirroring the LVC1G04 inverter (U3) on the board.
+    wire chip0_cs_n =  Cs1_n;
+    wire chip1_cs_n = ~Cs1_n;
 
     as4c32m16sb_6tin_chip_model #(
-        .CHIP_NAME("XSDS_CHIP0_AS4C32M16SB"),
-        .DEBUG(DEBUG),
-        .STRICT_TIMING(STRICT_TIMING)
+        .CHIP_NAME           ("XSDS_CHIP0_AS4C32M16SB"),
+        .DEBUG               (DEBUG),
+        .STRICT_TIMING       (STRICT_TIMING),
+        .WARN_TREFI          (WARN_TREFI),
+        .INIT_UNWRITTEN_TO_X (INIT_UNWRITTEN_TO_X)
     ) u_chip0 (
         .Clk   (Clk),
-        .Cke   (Cke),
+        .Cke   (chip_cke),
         .Cs_n  (chip0_cs_n),
         .Ras_n (Ras_n),
         .Cas_n (Cas_n),
         .We_n  (We_n),
         .Ba    (Ba),
         .Addr  (Addr),
-        .Ldqm  (Ldqm),
-        .Udqm  (Udqm),
+        .Ldqm  (chip_ldqm),
+        .Udqm  (chip_udqm),
         .Dq    (Dq)
     );
 
     as4c32m16sb_6tin_chip_model #(
-        .CHIP_NAME("XSDS_CHIP1_AS4C32M16SB"),
-        .DEBUG(DEBUG),
-        .STRICT_TIMING(STRICT_TIMING)
+        .CHIP_NAME           ("XSDS_CHIP1_AS4C32M16SB"),
+        .DEBUG               (DEBUG),
+        .STRICT_TIMING       (STRICT_TIMING),
+        .WARN_TREFI          (WARN_TREFI),
+        .INIT_UNWRITTEN_TO_X (INIT_UNWRITTEN_TO_X)
     ) u_chip1 (
         .Clk   (Clk),
-        .Cke   (Cke),
+        .Cke   (chip_cke),
         .Cs_n  (chip1_cs_n),
         .Ras_n (Ras_n),
         .Cas_n (Cas_n),
         .We_n  (We_n),
         .Ba    (Ba),
         .Addr  (Addr),
-        .Ldqm  (Ldqm),
-        .Udqm  (Udqm),
+        .Ldqm  (chip_ldqm),
+        .Udqm  (chip_udqm),
         .Dq    (Dq)
     );
 
