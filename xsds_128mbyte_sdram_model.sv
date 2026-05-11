@@ -678,10 +678,13 @@ module as4c32m16sb_6tin_chip_model #(
         end
     endtask
 
-    task automatic maybe_auto_precharge(input int unsigned bank);
+    task automatic maybe_auto_precharge(
+        input int unsigned bank,
+        input bit          from_write = 1'b0
+    );
         begin
             if (burst.auto_precharge && !burst.full_page) begin
-                do_precharge(bank, 1'b0, "auto-precharge");
+                do_precharge(bank, 1'b0, "auto-precharge", from_write);
             end
         end
     endtask
@@ -761,7 +764,7 @@ module as4c32m16sb_6tin_chip_model #(
             burst.index++;
 
             if (!burst.full_page && burst.index >= burst.len) begin
-                maybe_auto_precharge(burst.bank);
+                maybe_auto_precharge(burst.bank, 1'b1);
                 stop_burst();
             end
         end
@@ -945,8 +948,14 @@ module as4c32m16sb_6tin_chip_model #(
 
     task automatic do_precharge(
         input int unsigned bank,
-        input bit all_banks,
-        input string why
+        input bit          all_banks,
+        input string       why,
+        // Set when called for WRITE+AP. The chip schedules the implied
+        // PRECHARGE tWR after the last data cycle, so skip the tWR
+        // check (it would always trip — last_write was just stamped
+        // this cycle) and stamp last_precharge at $realtime + tWR_MIN
+        // so the next ACT's tRP check measures from the deferred event.
+        input bit          auto_from_write = 1'b0
     );
         int i;
         begin
@@ -980,13 +989,16 @@ module as4c32m16sb_6tin_chip_model #(
                                    last_activate[bank],
                                    tRAS_MIN);
 
-                    check_time_min($sformatf("tWR bank %0d WRITE-to-PRE", bank),
-                                   last_write[bank],
-                                   tWR_MIN);
+                    if (!auto_from_write) begin
+                        check_time_min($sformatf("tWR bank %0d WRITE-to-PRE", bank),
+                                       last_write[bank],
+                                       tWR_MIN);
+                    end
                 end
 
                 bank_open[bank]      = 1'b0;
-                last_precharge[bank] = $realtime;
+                last_precharge[bank] = auto_from_write ? ($realtime + tWR_MIN)
+                                                       :  $realtime;
 
                 if (DEBUG) begin
                     $display("%0t %s PRECHARGE bank=%0d (%s)", $time, CHIP_NAME, bank, why);
