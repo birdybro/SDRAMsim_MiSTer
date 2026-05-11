@@ -67,7 +67,7 @@ These are the rules MiSTer-style controllers most commonly trip:
 ## Smaller cleanup
 
 - [x] ~~`last_self_refresh_exit` uses `tRC + tIS` as the post-SREF lockout.~~ Added explicit `tXSR_MIN` parameter (default 70.0 ns per the AS4C32M16SB datasheet). Replaces the `tRC_MIN + tIS_MIN` derivation, which gave 61.5 ns — looser than spec. Note: this is a behavior change for any test that exercised SREF exit at 62–69 ns and used to pass; on the XSDS connector CKE is tied high so SREF is unreachable, but chip-level standalone tests of `as4c32m16sb_6tin_chip_model` may newly trip.
-- [ ] `check_init_before_normal_cmd` counts init refreshes when `init_seen_precharge_all || init_seen_mrs` is true. JEDEC ordering is PRE-ALL → 2 AREF → MRS; the looser gate hides ordering bugs. Tighten to require PRECHARGE_ALL before counting.
+- [x] ~~`check_init_before_normal_cmd` counts init refreshes when `init_seen_precharge_all || init_seen_mrs` is true.~~ Tightened: the gate in `do_auto_refresh` is now just `init_seen_precharge_all`. Out-of-order init sequences (e.g. MRS before PRE-ALL) will no longer have their post-MRS AREFs counted toward the init quota and will instead trip `check_init_before_normal_cmd` on the eventual ACT/READ/WRITE.
 
 ## Lower priority based on corpus survey (don't drop, don't prioritize)
 

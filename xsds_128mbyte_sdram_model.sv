@@ -1101,7 +1101,11 @@ module as4c32m16sb_6tin_chip_model #(
 
             record_refresh();
 
-            if (init_seen_precharge_all || init_seen_mrs) begin
+            // JEDEC init order is PRE-ALL -> 2 AREF -> MRS. Only count
+            // refreshes that arrive after PRE-ALL so out-of-order init
+            // sequences (e.g. MRS before PRE-ALL) trip the check later
+            // instead of being silently accepted.
+            if (init_seen_precharge_all) begin
                 if (init_auto_refresh_count < 2) begin
                     init_auto_refresh_count++;
                 end
