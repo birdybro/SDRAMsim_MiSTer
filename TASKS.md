@@ -14,14 +14,14 @@ These were open architectural questions in earlier revisions of this file. Answe
 
 - [x] **Rewrite the `xsds_128mbyte_sdram_model` wrapper to match the actual 40-pin XSDS connector.** Landed: wrapper now exposes only connector signals (`Clk`, `Cs1_n`, `Ras_n`, `Cas_n`, `We_n`, `Ba`, `Addr`, `Dq`); `Cke` tied to `1'b1` internally; `Ldqm`/`Udqm` driven from `Addr[11]`/`Addr[12]`; chip 0's `Cs_n = Cs1_n`, chip 1's `Cs_n = ~Cs1_n`. Dead parameters (`CHIPSEL_ACTIVE_FOR_CHIP1`, `CHECK_BUS_CONTENTION`) removed; `WARN_TREFI`/`INIT_UNWRITTEN_TO_X` now forwarded. README example and chip-level model unchanged.
 
-## Decision still pending
+## Direction resolved (was "decision still pending")
 
-- [ ] **No existing MiSTer controller addresses chip 2.** All ~91 keep `CS=0` always, so on the XSDS they only touch the lower 64 MB. Pick: (a) build a small CS1-aware adapter/wrapper controller so existing cores can transparently address the full 128 MB; (b) write the first XSDS-native reference controller in this repo; (c) accept the lower-64-MB limit for now. This gates whether chip 2 ever gets real exercise.
+- [x] ~~**No existing MiSTer controller addresses chip 2.**~~ Direction: build a small CS1-aware adapter so existing cores can transparently address the full 128 MB. NeoGeo is the load-bearing case (its ROMs are the only ones in the MiSTer fleet that actually need the upper 64 MB).
 
 ## Test-harness work
 
-- [ ] **Top-level testbench shim that maps a MiSTer-style controller bus to the new wrapper.** Once the wrapper rewrite lands and matches the connector, this shim is mostly trivial — connect controller pins straight through. Without the wrapper rewrite, the shim has to fake out DQM-from-A and ChipSel.
-- [ ] **Bring-up target order**, easiest → hardest: (1) `MemTest_MiSTer` — deliberate characterization tool, minimal abstraction. (2) A representative BL=1 CL=2 console core (`NES_MiSTer` or `Genesis_MiSTer`). (3) A full-page-burst core (Saturn/MegaCD). (4) `jtframe_sdram` as its own track. (Note: `Jaguar_MiSTer` / `Arcade-Darius_MiSTer` self-refresh paths can't be exercised through the XSDS connector since CKE is tied high — they're chip-level standalone tests, not XSDS regressions.)
+- [x] ~~**Top-level testbench shim that maps a MiSTer-style controller bus to the new wrapper.**~~ Landed: `xsds_cs1_adapter.sv` is a purely combinational CS1-aware adapter (takes a controller's existing single-CS SDRAM bus plus a 1-bit `ctrl_chip` signal and forces NOP encoding when the controller deasserts CS); `xsds_tb_shim.sv` is a self-contained smoke test that wires the adapter to two chip instances and exercises init / write / read on both chips. Passes clean under Verilator (`make -C verilator smoke`) with zero violations. Notes for bring-up: under Verilator the shim instantiates the chips directly because Verilator's tristate-through-hierarchy limitation chokes on the wrapper's inout pass-through even with --bbox-unsup at runtime; commercial sims can use the wrapper directly with the same adapter + stim pattern.
+- [ ] **Bring-up target order** (agreed): (1) `MemTest_MiSTer` — deliberate characterization tool, minimal abstraction. (2) A representative BL=1 CL=2 console core (`NES_MiSTer` or `Genesis_MiSTer`). (3) A full-page-burst core (Saturn/MegaCD). (4) `jtframe_sdram` as its own track. NeoGeo is the load-bearing case for chip-2 coverage once its controller is added to the corpus. Note: `Jaguar_MiSTer` / `Arcade-Darius_MiSTer` self-refresh paths can't be exercised through the XSDS connector since CKE is tied high — they're chip-level standalone tests, not XSDS regressions.
 
 ## Bugs
 

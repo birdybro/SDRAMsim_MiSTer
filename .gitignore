@@ -1,1 +1,4 @@
 .claude/settings.local.json
+
+# Verilator build output
+obj_dir/

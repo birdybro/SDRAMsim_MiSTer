@@ -828,6 +828,20 @@ module as4c32m16sb_6tin_chip_model #(
 
     task automatic check_init_before_normal_cmd(input int cmd);
         begin
+            // Any real command (anything other than NOP/DESL) issued before
+            // POWERUP_STABLE_TIME violates the chip's 200 us power-up
+            // requirement. Encoded here rather than at the CKE rising edge
+            // so it works on the XSDS connector (Cke tied to VCC) where the
+            // first clock cycle observes Cke=1 by definition.
+            if ((cmd != CMD_NOP) && (cmd != CMD_DESL)) begin
+                if ($realtime < POWERUP_STABLE_TIME) begin
+                    issue_error($sformatf("command %s issued at %0.3f ns before %0.0f us power-up delay",
+                                          cmd_name(cmd),
+                                          $realtime,
+                                          POWERUP_STABLE_TIME / 1000.0));
+                end
+            end
+
             if ((cmd == CMD_ACT) || (cmd == CMD_READ) || (cmd == CMD_WRIT)) begin
                 if (!init_seen_cke_high) begin
                     issue_error("normal command before CKE high");
@@ -1226,24 +1240,29 @@ module as4c32m16sb_6tin_chip_model #(
         // Cs_n becomes "selected" and an X on Ras/Cas/We becomes MRS. Flag
         // X/Z explicitly so those bugs surface here instead of as confusing
         // downstream state corruption.
-        if ((Cke === 1'bx) || (Cke === 1'bz)) begin
+        //
+        // Use $isunknown() rather than `=== 1'bx` so the check works under
+        // 2-state simulators (e.g. Verilator default mode), where `1'bx`
+        // collapses to 0 and `Cs_n === 1'bx` becomes a false positive every
+        // time Cs_n is 0.
+        if ($isunknown(Cke)) begin
             issue_error("X/Z on Cke");
             disable main_proc;
         end
         if (Cke === 1'b1 && init_seen_cke_high) begin
-            if ((Cs_n === 1'bx) || (Cs_n === 1'bz)) begin
+            if ($isunknown(Cs_n)) begin
                 issue_error("X/Z on Cs_n while Cke=1");
                 disable main_proc;
             end
-            if ((Ras_n === 1'bx) || (Ras_n === 1'bz)) begin
+            if ($isunknown(Ras_n)) begin
                 issue_error("X/Z on Ras_n while Cke=1");
                 disable main_proc;
             end
-            if ((Cas_n === 1'bx) || (Cas_n === 1'bz)) begin
+            if ($isunknown(Cas_n)) begin
                 issue_error("X/Z on Cas_n while Cke=1");
                 disable main_proc;
             end
-            if ((We_n === 1'bx) || (We_n === 1'bz)) begin
+            if ($isunknown(We_n)) begin
                 issue_error("X/Z on We_n while Cke=1");
                 disable main_proc;
             end
@@ -1259,13 +1278,13 @@ module as4c32m16sb_6tin_chip_model #(
         dqm_pipe[1] <= dqm_pipe[0];
         dqm_pipe[0] <= {Udqm, Ldqm};
 
+        // Stamp init_seen_cke_high on the first CKE-high cycle. Don't error
+        // on it being early — on the XSDS connector Cke is tied to VCC and
+        // the very first clock cycle observes it high, which is fine. The
+        // power-up window is enforced against the first real command in
+        // check_init_before_normal_cmd, where it actually matters.
         if (!init_seen_cke_high && Cke) begin
             init_seen_cke_high = 1'b1;
-
-            if ($realtime < POWERUP_STABLE_TIME) begin
-                issue_error($sformatf("CKE high at %0.3f ns before 200 us power-up delay",
-                                      $realtime));
-            end
         end
 
         if (in_self_refresh) begin
