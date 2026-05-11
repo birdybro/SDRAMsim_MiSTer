@@ -299,12 +299,22 @@ module as4c32m16sb_6tin_chip_model #(
     parameter realtime tIH_MIN               = 0.8,
     parameter realtime tDS_MIN               = 1.5,
     parameter realtime tDH_MIN               = 0.8,
-    // Output access / Hi-Z propagation delay applied to DQ on the read path.
-    // Used as a single approximation of tAC (CLK to data valid), tLZ (output
-    // enable to driving) and tHZ (output disable to Hi-Z). Default 5.4 ns is
-    // the typical AS4C32M16SB-6TIN tAC; tOH is not separately modeled (it
-    // ends up roughly equal to tAC under this scheme).
+    // Read-path output timing (DQ pad). All three are intra-assignment NBA
+    // delays so they take effect under any simulator that supports --timing
+    // (Verilator with --timing, ModelSim, Questa, etc.).
+    //
+    //   tAC_MAX: clock-to-data-valid for read data on the DQ pad.
+    //   tHZ_MAX: clock-to-Hi-Z when the chip stops driving DQ.
+    //   tLZ_MIN: clock-to-driving when the chip starts driving DQ. Real
+    //            silicon spec is "min", but we use it as the NBA delay
+    //            here so the OE asserts that long after the clock edge.
+    //
+    // tOH (data-out hold time after the next clock edge) is not modeled
+    // separately — under the NBA-with-tAC scheme it ends up roughly
+    // equal to tAC, which exceeds the AS4C32M16SB-6TIN tOH spec of 2.5 ns.
     parameter realtime tAC_MAX               = 5.4,
+    parameter realtime tHZ_MAX               = 5.4,
+    parameter realtime tLZ_MIN               = 1.0,
     parameter realtime tREFI_MAX             = 7_800.0,
 
     // 8192 refresh cycles per 64 ms.
@@ -701,10 +711,11 @@ module as4c32m16sb_6tin_chip_model #(
         logic [1:0] read_dqm;
         begin
             if (!burst.active || !burst.is_read) begin
-                dq_oe <= #(tAC_MAX) 1'b0;
+                // Going / staying Hi-Z: schedule with tHZ_MAX.
+                dq_oe <= #(tHZ_MAX) 1'b0;
             end else if (burst.latency != 0) begin
                 burst.latency--;
-                dq_oe <= #(tAC_MAX) 1'b0;
+                dq_oe <= #(tHZ_MAX) 1'b0;
             end else begin
                 col       = next_col(burst.start_col, burst.index, burst.len, burst.interleaved);
                 data_read = mem_read(burst.bank, burst.row, col);
@@ -714,8 +725,12 @@ module as4c32m16sb_6tin_chip_model #(
                 if (read_dqm[0]) outgoing[7:0]  = 8'hzz;
                 if (read_dqm[1]) outgoing[15:8] = 8'hzz;
 
+                // Data drive: tAC for the value, tLZ for the OE assertion.
+                // tLZ is typically smaller than tAC, so the OE goes high
+                // before the data is fully valid — real silicon shows the
+                // pad transitioning out of Hi-Z while data settles.
                 dq_out <= #(tAC_MAX) outgoing;
-                dq_oe  <= #(tAC_MAX) 1'b1;
+                dq_oe  <= #(tLZ_MIN) 1'b1;
 
                 if (DEBUG) begin
                     $display("%0t %s READ bank=%0d row=%0d col=%0d data=%04h dqm_latency2=%b",
@@ -1492,7 +1507,9 @@ module as4c32m16sb_6tin_chip_model #(
         if (burst.active && burst.is_read) begin
             advance_read_burst();
         end else begin
-            dq_oe <= #(tAC_MAX) 1'b0;
+            // Stay Hi-Z when no read burst is active: tHZ_MAX delay matches
+            // the read-end Hi-Z transition above.
+            dq_oe <= #(tHZ_MAX) 1'b0;
         end
 
         if (DEBUG && cmd != CMD_NOP && cmd != CMD_DESL) begin
