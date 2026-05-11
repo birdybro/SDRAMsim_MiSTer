@@ -1185,6 +1185,35 @@ module as4c32m16sb_6tin_chip_model #(
         bit auto_precharge;
         bit precharge_all;
 
+        // X-prop check on command pins. decode_cmd's bit-typed args silently
+        // coerce X/Z to 0, which would let undefined controller outputs
+        // collapse into a defined (often dangerous) command — e.g. an X on
+        // Cs_n becomes "selected" and an X on Ras/Cas/We becomes MRS. Flag
+        // X/Z explicitly so those bugs surface here instead of as confusing
+        // downstream state corruption.
+        if ((Cke === 1'bx) || (Cke === 1'bz)) begin
+            issue_error("X/Z on Cke");
+            disable main_proc;
+        end
+        if (Cke === 1'b1 && init_seen_cke_high) begin
+            if ((Cs_n === 1'bx) || (Cs_n === 1'bz)) begin
+                issue_error("X/Z on Cs_n while Cke=1");
+                disable main_proc;
+            end
+            if ((Ras_n === 1'bx) || (Ras_n === 1'bz)) begin
+                issue_error("X/Z on Ras_n while Cke=1");
+                disable main_proc;
+            end
+            if ((Cas_n === 1'bx) || (Cas_n === 1'bz)) begin
+                issue_error("X/Z on Cas_n while Cke=1");
+                disable main_proc;
+            end
+            if ((We_n === 1'bx) || (We_n === 1'bz)) begin
+                issue_error("X/Z on We_n while Cke=1");
+                disable main_proc;
+            end
+        end
+
         cmd            = decode_cmd(Cs_n, Ras_n, Cas_n, We_n, Cke);
         bank           = Ba;
         row            = Addr[ROW_BITS-1:0];

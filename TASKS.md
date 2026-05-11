@@ -43,7 +43,7 @@ These are the rules MiSTer-style controllers most commonly trip:
 - [ ] **Clock-suspend during a read burst Hi-Z's DQ.** `xsds_128mbyte_sdram_model.sv:1102-1103` sets `dq_oe=0` on CKE-low while a read burst is active. Real chips hold the current output until CKE returns. Controllers that toggle CKE mid-burst will see different behavior here vs. silicon.
 - [ ] **Auto-precharge timing fires after the last burst output.** Real chips trigger the implied PRECHARGE earlier (≈BL−CL) so a same-bank ACT can come sooner. The model's later trigger means an ACT-after-AP that's legal on silicon may trip tRP here. Conservative direction — good for catching aggressive controllers, but document or fix.
 - [ ] **Mode register decoded to defaults at time 0.** Real silicon has it undefined until MRS. The init checker prevents anyone from seeing the defaults today, so cosmetic, but a tester who disables the init checker silently gets BL=1/CL=3 instead of an error.
-- [ ] **X-propagation on commands.** `decode_cmd` casts to `bit`, so an X on Cs_n/Ras_n/Cas_n/We_n collapses to a defined command. Real chips would do something undefined. Useful X-prop bugs in controllers can be hidden. Add an explicit "any command-input X while CKE=1" → error path.
+- [x] ~~**X-propagation on commands.**~~ Added an explicit X/Z check at the top of `main_proc`: always errors on X/Z on Cke; once `init_seen_cke_high` is set, also errors on X/Z on Cs_n/Ras_n/Cas_n/We_n while Cke=1. On detection, the cycle exits via `disable main_proc` so no garbage command dispatches. Pre-init X is tolerated to avoid spamming the log during testbench reset.
 
 ## Module-wrapper gaps (XSDS-specific)
 
