@@ -1322,14 +1322,18 @@ module as4c32m16sb_6tin_chip_model #(
                     $display("%0t %s SELF REFRESH ENTRY", $time, CHIP_NAME);
                 end
             end else if (burst.active) begin
+                // Clock-suspend during an active burst: the chip freezes
+                // the burst engine and holds DQ at its current value. Do
+                // not clear dq_oe — the previous cycle's NBA-with-tAC
+                // delay sets the held output.
                 in_clock_suspend = 1'b1;
-                dq_oe = 1'b0;
             end else if (all_banks_idle()) begin
                 in_power_down = 1'b1;
                 dq_oe = 1'b0;
             end else begin
+                // Clock-suspend with banks open but no active burst: no
+                // DQ output to hold, but also no need to force Hi-Z here.
                 in_clock_suspend = 1'b1;
-                dq_oe = 1'b0;
             end
 
             cke_prev <= Cke;
@@ -1337,7 +1341,10 @@ module as4c32m16sb_6tin_chip_model #(
         end
 
         if (!Cke) begin
-            dq_oe <= 1'b0;
+            // Generic CKE-low fallback for cycles after the falling edge.
+            // PD / SREF entries already set dq_oe = 0 above and we don't
+            // touch dq_oe in clock-suspend (the burst engine's held value
+            // persists). So this branch leaves dq_oe alone.
             cke_prev <= Cke;
             disable main_proc;
         end
