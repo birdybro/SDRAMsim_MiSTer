@@ -166,6 +166,13 @@ module xsds_128mbyte_sdram_model #(
         module_warning_count = u_chip0.warning_count + u_chip1.warning_count;
     endfunction
 
+    task automatic module_dump_state();
+        begin
+            u_chip0.dump_state();
+            u_chip1.dump_state();
+        end
+    endtask
+
     task automatic module_load_rom_hex(
         input string             filename,
         input longint unsigned   byte_base
@@ -1515,6 +1522,62 @@ module as4c32m16sb_6tin_chip_model #(
             if (DEBUG) begin
                 $display("%0t %s load_rom_hex loaded %0d words from '%s' (word_base=%0d)",
                          $time, CHIP_NAME, loaded, filename, word_base);
+            end
+        end
+    endtask
+
+    // Post-mortem state dump. Prints every piece of chip state a controller
+    // bug might depend on: counters, mode register, per-bank activity, the
+    // current burst, power-management flags, init-checker progress, and a
+    // one-line refresh summary. Cheap to call repeatedly during a failing
+    // test or once at end-of-test.
+    task automatic dump_state();
+        int i;
+        begin
+            $display("===== %s state @ %0t =====", CHIP_NAME, $time);
+            $display("  counters: errors=%0d warnings=%0d",
+                     error_count, warning_count);
+            $display("  mode reg: BL=%0d full_page=%0b BT=%s CL=%0d WBL=%s",
+                     burst_length,
+                     burst_full_page,
+                     burst_interleaved ? "interleaved" : "sequential",
+                     cas_latency,
+                     write_burst_single ? "single" : "burst");
+            $display("  power:    pd=%0b sref=%0b clk_susp=%0b",
+                     in_power_down, in_self_refresh, in_clock_suspend);
+            $display("  init:     cke_high=%0b pre_all=%0b mrs=%0b aref_count=%0d",
+                     init_seen_cke_high,
+                     init_seen_precharge_all,
+                     init_seen_mrs,
+                     init_auto_refresh_count);
+            $display("  refresh:  queued=%0d / %0d last_refresh=%0.3f ns",
+                     refresh_times.size(), REFRESHES_PER_WINDOW, last_refresh);
+
+            for (i = 0; i < BANKS; i++) begin
+                $display("  bank %0d:   open=%0b row=%0d last_act=%0.3f last_rd=%0.3f last_wr=%0.3f last_pre=%0.3f",
+                         i,
+                         bank_open[i],
+                         open_row[i],
+                         last_activate[i],
+                         last_read[i],
+                         last_write[i],
+                         last_precharge[i]);
+            end
+
+            if (burst.active) begin
+                $display("  burst:    %s bank=%0d row=%0d start_col=%0d idx=%0d len=%0d lat=%0d ap=%0b full=%0b il=%0b",
+                         burst.is_read ? "READ" : (burst.is_write ? "WRITE" : "?"),
+                         burst.bank,
+                         burst.row,
+                         burst.start_col,
+                         burst.index,
+                         burst.len,
+                         burst.latency,
+                         burst.auto_precharge,
+                         burst.full_page,
+                         burst.interleaved);
+            end else begin
+                $display("  burst:    idle");
             end
         end
     endtask
