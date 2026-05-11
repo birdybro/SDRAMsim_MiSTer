@@ -129,6 +129,25 @@ module xsds_128mbyte_sdram_model #(
         end
     endtask
 
+    // Dump/restore the full 128 MB module to a pair of files:
+    //   "<base>.chip0" — lower 64 MB
+    //   "<base>.chip1" — upper 64 MB
+    // Each file is the sparse-key format produced by the chip-level
+    // dump_memory task and consumed by load_memory.
+    task automatic module_dump_memory(input string base_filename);
+        begin
+            u_chip0.dump_memory({base_filename, ".chip0"});
+            u_chip1.dump_memory({base_filename, ".chip1"});
+        end
+    endtask
+
+    task automatic module_load_memory(input string base_filename);
+        begin
+            u_chip0.load_memory({base_filename, ".chip0"});
+            u_chip1.load_memory({base_filename, ".chip1"});
+        end
+    endtask
+
 endmodule
 
 
@@ -1299,6 +1318,72 @@ module as4c32m16sb_6tin_chip_model #(
     );
         begin
             value = mem_read(bank, row, col);
+        end
+    endtask
+
+    // Sparse snapshot format: "<key_hex> <data_hex>" per line.
+    //   key  = 7 hex digits = {bank[1:0], row[12:0], col[9:0]} (25 bits)
+    //   data = 4 hex digits (16 bits)
+    // Lines whose first two tokens don't match this layout are skipped, so
+    // "//" or "#" comment lines and blank lines pass through harmlessly.
+    task automatic dump_memory(input string filename);
+        int       fd;
+        mem_key_t k;
+        int unsigned count;
+        begin
+            fd = $fopen(filename, "w");
+            if (fd == 0) begin
+                $error("%s: dump_memory failed to open '%s' for write",
+                       CHIP_NAME, filename);
+                return;
+            end
+
+            $fdisplay(fd, "// %s memory dump @ %0t", CHIP_NAME, $time);
+            count = 0;
+            if (mem.first(k)) begin
+                do begin
+                    $fdisplay(fd, "%07h %04h", k, mem[k]);
+                    count++;
+                end while (mem.next(k));
+            end
+            $fclose(fd);
+
+            if (DEBUG) begin
+                $display("%0t %s dumped %0d entries to '%s'",
+                         $time, CHIP_NAME, count, filename);
+            end
+        end
+    endtask
+
+    task automatic load_memory(input string filename);
+        int       fd;
+        int       code;
+        string    line;
+        mem_key_t key;
+        data_t    value;
+        int unsigned loaded;
+        begin
+            fd = $fopen(filename, "r");
+            if (fd == 0) begin
+                $error("%s: load_memory failed to open '%s' for read",
+                       CHIP_NAME, filename);
+                return;
+            end
+
+            loaded = 0;
+            while ($fgets(line, fd) != 0) begin
+                code = $sscanf(line, "%h %h", key, value);
+                if (code == 2) begin
+                    mem[key] = value;
+                    loaded++;
+                end
+            end
+            $fclose(fd);
+
+            if (DEBUG) begin
+                $display("%0t %s loaded %0d entries from '%s'",
+                         $time, CHIP_NAME, loaded, filename);
+            end
         end
     endtask
 

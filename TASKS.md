@@ -53,7 +53,8 @@ These are the rules MiSTer-style controllers most commonly trip:
 
 ## Testbench affordances missing
 
-- [ ] **`dump_memory(filename)` / `load_memory(filename)` tasks.** Currently only `poke`/`peek` exist. MiSTer core tests need to seed SDRAM with a ROM image at t=0 and snapshot state between runs.
+- [x] ~~**`dump_memory(filename)` / `load_memory(filename)` tasks.**~~ Added at both layers: chip-level `dump_memory` / `load_memory` write/read a sparse `<key_hex> <data_hex>` text format (one line per populated cell), and wrapper-level `module_dump_memory` / `module_load_memory` delegate to both chips with `.chip0` / `.chip1` filename suffixes. Round-trips cleanly; comment/blank lines are skipped on load. Good for snapshot/restore between runs.
+- [ ] **ROM-seeding helper (`load_rom_hex` / similar).** The dump/load pair handles snapshots but is awkward for seeding a fresh module with a ROM image — the sparse format needs explicit keys for every word. Add a `$readmemh`-style task that takes a filename + base byte address and pokes consecutive 16-bit words into the appropriate chip(s). Wrapper version should handle ROM images that straddle the 64 MB chip boundary.
 - [ ] **Global error counter readable from the testbench.** `$error` bumps the simulator's count, but there's no "did this chip see ≥1 violation" boolean a TB can assert on at end-of-test.
 - [ ] **`dump_state()` task** that prints all bank/burst/mode-register state for post-mortem after a failure.
 
