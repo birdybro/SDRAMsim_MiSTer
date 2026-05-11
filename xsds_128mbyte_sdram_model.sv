@@ -680,11 +680,12 @@ module as4c32m16sb_6tin_chip_model #(
 
     task automatic maybe_auto_precharge(
         input int unsigned bank,
-        input bit          from_write = 1'b0
+        input bit          from_write = 1'b0,
+        input bit          from_read  = 1'b0
     );
         begin
             if (burst.auto_precharge && !burst.full_page) begin
-                do_precharge(bank, 1'b0, "auto-precharge", from_write);
+                do_precharge(bank, 1'b0, "auto-precharge", from_write, from_read);
             end
         end
     endtask
@@ -729,7 +730,8 @@ module as4c32m16sb_6tin_chip_model #(
                     ap_trigger_idx = (burst.len > cas_latency) ?
                                      (burst.len - cas_latency) : 1;
                     if (burst.index >= ap_trigger_idx) begin
-                        do_precharge(burst.bank, 1'b0, "auto-precharge (read)");
+                        do_precharge(burst.bank, 1'b0, "auto-precharge (read)",
+                                     1'b0, 1'b1);
                         burst.auto_precharge = 1'b0;
                     end
                 end
@@ -965,14 +967,23 @@ module as4c32m16sb_6tin_chip_model #(
         input bit          all_banks,
         input string       why,
         // Set when called for WRITE+AP. The chip schedules the implied
-        // PRECHARGE tWR after the last data cycle, so skip the tWR
-        // check (it would always trip — last_write was just stamped
-        // this cycle) and stamp last_precharge at $realtime + tWR_MIN
-        // so the next ACT's tRP check measures from the deferred event.
-        input bit          auto_from_write = 1'b0
+        // PRECHARGE tWR after the last data cycle, so skip the tWR check
+        // (last_write was just stamped this cycle) and incorporate tWR
+        // into the deferred PRE event timestamp.
+        input bit          auto_from_write = 1'b0,
+        // Set when called for READ+AP. Real silicon also handles tRAS
+        // internally for READ+AP; skip the tRAS check on this path so
+        // controllers like NES that issue ACT then WRITE/READ-with-AP a
+        // cycle later don't get false-positive tRAS errors.
+        input bit          auto_from_read  = 1'b0
     );
-        int i;
+        realtime base_pre_time;
+        realtime tras_target;
+        bit      is_auto;
+        int      i;
         begin
+            is_auto = auto_from_write || auto_from_read;
+
             if (all_banks) begin
                 for (i = 0; i < BANKS; i++) begin
                     if (bank_open[i]) begin
@@ -999,20 +1010,40 @@ module as4c32m16sb_6tin_chip_model #(
                 end
 
                 if (bank_open[bank]) begin
-                    check_time_min($sformatf("tRAS bank %0d ACT-to-PRE", bank),
-                                   last_activate[bank],
-                                   tRAS_MIN);
+                    // For explicit PRE, both checks fire. For AP, the chip
+                    // handles tRAS / tWR internally — skip the checks and
+                    // build the deferred PRE event time below instead.
+                    if (!is_auto) begin
+                        check_time_min($sformatf("tRAS bank %0d ACT-to-PRE", bank),
+                                       last_activate[bank],
+                                       tRAS_MIN);
 
-                    if (!auto_from_write) begin
                         check_time_min($sformatf("tWR bank %0d WRITE-to-PRE", bank),
                                        last_write[bank],
                                        tWR_MIN);
                     end
                 end
 
-                bank_open[bank]      = 1'b0;
-                last_precharge[bank] = auto_from_write ? ($realtime + tWR_MIN)
-                                                       :  $realtime;
+                bank_open[bank] = 1'b0;
+
+                if (is_auto) begin
+                    // Real silicon defers the implied PRECHARGE so that
+                    // both tRAS (from ACT) and tWR (from last write) are
+                    // satisfied at the moment the row actually closes.
+                    // Stamp last_precharge at the later of:
+                    //   - $realtime + tWR_MIN (write-AP) or $realtime (read-AP)
+                    //   - last_activate + tRAS_MIN
+                    // so the next ACT's tRP check measures from the real
+                    // (deferred) precharge event rather than this cycle.
+                    base_pre_time = auto_from_write ? ($realtime + tWR_MIN)
+                                                    :  $realtime;
+                    tras_target   = last_activate[bank] + tRAS_MIN;
+
+                    last_precharge[bank] = (base_pre_time > tras_target) ?
+                                           base_pre_time : tras_target;
+                end else begin
+                    last_precharge[bank] = $realtime;
+                end
 
                 if (DEBUG) begin
                     $display("%0t %s PRECHARGE bank=%0d (%s)", $time, CHIP_NAME, bank, why);

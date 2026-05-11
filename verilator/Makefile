@@ -70,7 +70,22 @@ NEOGEO_SOURCES := \
 	$(ROOT)/xsds_tb_neogeo.sv \
 	$(ROOT)/xsds_128mbyte_sdram_model.sv
 
-.PHONY: lint smoke memtest neogeo clean
+NES_FLAGS := \
+	--binary \
+	--sv \
+	--timing \
+	--bbox-unsup \
+	-Wno-fatal \
+	--top-module xsds_tb_nes
+
+NES_SOURCES := \
+	$(ROOT)/verilator/altddio_out_stub.sv \
+	$(ROOT)/ref/MiSTer\ SDRAM\ Controller\ Modules/NES_MiSTer/rtl/sdram.sv \
+	$(ROOT)/xsds_cs1_adapter.sv \
+	$(ROOT)/xsds_tb_nes.sv \
+	$(ROOT)/xsds_128mbyte_sdram_model.sv
+
+.PHONY: lint smoke memtest neogeo nes clean
 
 lint:
 	$(VERILATOR) $(LINT_FLAGS) $(LINT_SOURCES)
@@ -86,6 +101,10 @@ memtest:
 neogeo:
 	$(VERILATOR) $(NEOGEO_FLAGS) $(NEOGEO_SOURCES)
 	./obj_dir/Vxsds_tb_neogeo
+
+nes:
+	$(VERILATOR) $(NES_FLAGS) $(NES_SOURCES)
+	./obj_dir/Vxsds_tb_nes
 
 clean:
 	rm -rf obj_dir
