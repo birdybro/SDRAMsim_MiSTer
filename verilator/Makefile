@@ -56,7 +56,21 @@ MEMTEST_SOURCES := \
 	$(ROOT)/xsds_tb_memtest.sv \
 	$(ROOT)/xsds_128mbyte_sdram_model.sv
 
-.PHONY: lint smoke memtest clean
+NEOGEO_FLAGS := \
+	--binary \
+	--sv \
+	--timing \
+	--bbox-unsup \
+	-Wno-fatal \
+	--top-module xsds_tb_neogeo
+
+NEOGEO_SOURCES := \
+	$(ROOT)/verilator/altddio_out_stub.sv \
+	$(ROOT)/ref/MiSTer\ SDRAM\ Controller\ Modules/NeoGeo_MiSTer/rtl/mem/sdram.sv \
+	$(ROOT)/xsds_tb_neogeo.sv \
+	$(ROOT)/xsds_128mbyte_sdram_model.sv
+
+.PHONY: lint smoke memtest neogeo clean
 
 lint:
 	$(VERILATOR) $(LINT_FLAGS) $(LINT_SOURCES)
@@ -68,6 +82,10 @@ smoke:
 memtest:
 	$(VERILATOR) $(MEMTEST_FLAGS) $(MEMTEST_SOURCES)
 	./obj_dir/Vxsds_tb_memtest
+
+neogeo:
+	$(VERILATOR) $(NEOGEO_FLAGS) $(NEOGEO_SOURCES)
+	./obj_dir/Vxsds_tb_neogeo
 
 clean:
 	rm -rf obj_dir
