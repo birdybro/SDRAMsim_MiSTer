@@ -118,6 +118,17 @@ module xsds_128mbyte_sdram_model #(
         .Dq    (Dq)
     );
 
+    // Refresh tracking is per-chip because each chip only sees commands when
+    // Cs1_n routes to it. A testbench that only refreshes one Cs1_n state will
+    // get a violation from the other chip, not from the wrapper — call this
+    // at end-of-test to print both chips' refresh state side by side.
+    task automatic module_refresh_status();
+        begin
+            u_chip0.report_refresh_status();
+            u_chip1.report_refresh_status();
+        end
+    endtask
+
 endmodule
 
 

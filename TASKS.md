@@ -47,7 +47,7 @@ These are the rules MiSTer-style controllers most commonly trip:
 
 ## Module-wrapper gaps (XSDS-specific)
 
-- [ ] **No aggregate refresh status across the two chips.** Each chip independently tracks 8192/64 ms; if a controller refreshes only one Cs1_n state, only that chip's checker fires. Add a `module_refresh_status()` task that reports both chips at end-of-test so testbenches can assert "all good."
+- [x] ~~**No aggregate refresh status across the two chips.**~~ Added: wrapper-level `module_refresh_status()` task that calls each chip's `report_refresh_status()`. Testbenches can invoke `<dut>.module_refresh_status()` at end-of-test to dump both chips' refresh counters / window state side by side. (Per-chip violations still raise during the run via `record_refresh`; this task is a TB-side post-mortem helper, not a new check.)
 - [x] ~~Bus-contention warning is combinational and posts continuously while both selects assert.~~ Resolved by the wrapper rewrite — `chip0_cs_n = Cs1_n` and `chip1_cs_n = ~Cs1_n` make both-selected structurally impossible. The warning was removed.
 - [x] ~~No ChipSel-vs-command timing relationship checked.~~ Obsolete: there is no separate `ChipSel`. `Cs1_n` flows directly into the chip-level command-decode pipeline, so any setup/hold or mid-burst-flip issues are caught by the chip model's own checks.
 
