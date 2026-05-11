@@ -35,7 +35,7 @@ These are the rules MiSTer-style controllers most commonly trip:
 - [x] ~~**tIS / tIH** — input setup/hold on Cs/Ras/Cas/We/Addr/Ba/DQM around `posedge Clk`.~~ Added: per-group transition timestamps (`last_cmdpin_change` for Cs/Ras/Cas/We; `last_addrpin_change` for Ba/Addr/Ldqm/Udqm) updated by dedicated `always @(...)` blocks. Setup checked at `posedge Clk` in `main_proc` against `tIS_MIN`; hold checked at each transition against `tIH_MIN`, with a `delta > 0.0` guard so NBA-at-posedge sync patterns (the standard controller idiom) don't false-fire — real silicon's tCO propagation delay would put the change slightly after the edge, which behavioral sim can't represent.
 - [x] ~~**tDS / tDH** — DQ setup/hold during writes.~~ Added: `tDS_MIN` checked at the write-data capture posedge inside `consume_write_data` (against the most-recent Dq transition). `tDH_MIN` checked in an `always @(Dq)` block against `last_dq_sample` (the timestamp of the most-recent capture posedge), with the same `delta > 0.0` guard as tIH.
 - [x] ~~**tAC / tOH / tHZ / tLZ** — read DQ output timing.~~ Three of four split out as separate parameters: `tAC_MAX` (5.4 ns, clock-to-data-valid), `tHZ_MAX` (5.4 ns, clock-to-Hi-Z when stopping output), `tLZ_MIN` (1.0 ns, clock-to-driving when starting output). All applied via NBA intra-assignment delays in `advance_read_burst` and the main-loop fallback so DQ becomes valid `tAC_MAX` after the edge, the OE asserts `tLZ_MIN` after the edge (typical real-silicon "drive starts before data settles" behavior), and the OE deasserts `tHZ_MAX` after the cycle ending a read. **tOH** is still implicit — under the NBA-with-tAC scheme the data holds until the next cycle's NBA fires, giving an effective tOH ~ tAC which exceeds the 2.5 ns spec. Verilator users need `--timing` for the intra-assignment delays to take effect. CKE-low / SREF / PD paths' `dq_oe = 0` writes are still blocking (unreachable on XSDS so deferred).
-- [ ] **tXP / tCKS** — power-down exit timing and CKE setup before SREF/PD entry. Not modeled. **Note**: CKE is tied to VCC on the XSDS board, so this can never trigger for the XSDS use case. Only relevant for non-XSDS standalone use of the chip model. Lower priority than other timing checks.
+- [~] **tXP / tCKS** — power-down exit timing and CKE setup before SREF/PD entry. **Not implemented and not planned**: CKE is tied to VCC on the XSDS connector, so power-down, self-refresh, and clock-suspend can never engage on this board. Adding tXP/tCKS would only matter for chip-level standalone use of `as4c32m16sb_6tin_chip_model` outside of an XSDS context, which is not a project goal.
 - [x] ~~**tCCD** — column-to-column command spacing.~~ Added: `tCCD_MIN` parameter (default 6.0 ns ≈ 1 tCK at -6) plus a global `last_col_cmd` timestamp stamped by both `do_read` and `do_write`. The check fires on any READ/WRITE pair (cross-bank or same-bank) issued closer than `tCCD_MIN`. In practice satisfied trivially when the clock period meets tCK_MIN; main value is making the parameter set explicit and giving slower-grade overrides somewhere to land.
 
 ## Behavioral subtleties that diverge from real silicon
@@ -63,7 +63,7 @@ These are the rules MiSTer-style controllers most commonly trip:
 
 - [x] ~~**Verify Verilator build.**~~ Confirmed against Verilator 5.048 (April 2026). Queues, associative arrays, `parameter realtime`, and NBA intra-assignment delays all work as expected. Required tweaks: a tiny stub (`verilator/lint_stub.sv`) that makes Dq internal because Verilator does not support tristate at a top-level port, plus the `--bbox-unsup` flag because Verilator does not support the wrapper's inout pass-through through hierarchy either. With those, lint runs clean (no warnings, no errors). Three small width casts (`int'(...)`) and two `mem.first/next() != 0` rewrites in the model were needed to silence cosmetic WIDTHEXPAND / WIDTHTRUNC warnings.
 - [x] ~~**CI smoke test under Verilator** with `--lint-only`.~~ Added `verilator/Makefile` with a `lint` target. Run with `make -C verilator lint`. Drop-in for a CI job; exit non-zero on any new warning.
-- [ ] **Decide on GHDL strategy.** GHDL is VHDL-only; using this model with GHDL needs either mixed-language sim (fragile) or a VHDL port of the model (real project). Pick a direction or drop GHDL from the stated goals.
+- [~] **Decide on GHDL strategy.** Deferred / not pursued. GHDL is VHDL-only and the practical paths (mixed-language sim or a VHDL port) both have significant cost relative to the gain. Verilator coverage (lint + smoke + bring-up TBs) is the primary open-simulator path going forward; commercial sims (ModelSim / Questa / VCS / Xcelium) handle the SystemVerilog model directly.
 
 ## Smaller cleanup
 
@@ -73,3 +73,15 @@ These are the rules MiSTer-style controllers most commonly trip:
 ## Lower priority based on corpus survey (don't drop, don't prioritize)
 
 - [ ] **Interleaved-burst code path is dead in practice.** Zero of the 91 reference controllers use interleaved burst type — they're all sequential. Don't delete the interleaved support (real chips support it, and a custom test could exercise it), but don't sink optimization or correctness work into it ahead of items above.
+
+## Status snapshot
+
+The model is largely feature-complete for the XSDS use case. What remains open as of this snapshot:
+
+- **Bring-up targets still to land:** a full-page-burst console core (Saturn or MegaCD) and `jtframe_sdram` as its own track. The first three targets (`MemTest_MiSTer`, `NeoGeo_MiSTer`, `NES_MiSTer`) all pass and demonstrate both the XSDS-native and tied-low controller paths.
+- **Cosmetic fixes deferred:** mode register decoded to defaults at time 0 (init checker prevents observation today, so cosmetic).
+
+Closed as out-of-scope for the XSDS use case:
+
+- tXP / tCKS (CKE is hardwired high on the XSDS connector — these timings can never engage).
+- GHDL support (the SystemVerilog model targets Verilator + commercial sims; GHDL VHDL-only flow doesn't fit).
