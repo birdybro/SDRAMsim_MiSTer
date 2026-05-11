@@ -294,6 +294,7 @@ module as4c32m16sb_6tin_chip_model #(
     parameter realtime tWR_MIN               = 12.0,
     parameter realtime tWTR_MIN              = 7.5,
     parameter realtime tCCD_MIN              = 6.0,
+    parameter realtime tXSR_MIN              = 70.0,
     parameter realtime tIS_MIN               = 1.5,
     parameter realtime tREFI_MAX             = 7_800.0,
 
@@ -906,7 +907,7 @@ module as4c32m16sb_6tin_chip_model #(
 
             check_time_min("tXSR self-refresh-exit-to-command",
                            last_self_refresh_exit,
-                           tRC_MIN + tIS_MIN);
+                           tXSR_MIN);
 
             bank_open[bank]     = 1'b1;
             open_row[bank]      = row;
