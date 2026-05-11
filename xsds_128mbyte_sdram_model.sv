@@ -296,6 +296,12 @@ module as4c32m16sb_6tin_chip_model #(
     parameter realtime tCCD_MIN              = 6.0,
     parameter realtime tXSR_MIN              = 70.0,
     parameter realtime tIS_MIN               = 1.5,
+    // Output access / Hi-Z propagation delay applied to DQ on the read path.
+    // Used as a single approximation of tAC (CLK to data valid), tLZ (output
+    // enable to driving) and tHZ (output disable to Hi-Z). Default 5.4 ns is
+    // the typical AS4C32M16SB-6TIN tAC; tOH is not separately modeled (it
+    // ends up roughly equal to tAC under this scheme).
+    parameter realtime tAC_MAX               = 5.4,
     parameter realtime tREFI_MAX             = 7_800.0,
 
     // 8192 refresh cycles per 64 ms.
@@ -683,23 +689,25 @@ module as4c32m16sb_6tin_chip_model #(
     task automatic advance_read_burst();
         int unsigned col;
         data_t data_read;
+        data_t outgoing;
         logic [1:0] read_dqm;
         begin
             if (!burst.active || !burst.is_read) begin
-                dq_oe = 1'b0;
+                dq_oe <= #(tAC_MAX) 1'b0;
             end else if (burst.latency != 0) begin
                 burst.latency--;
-                dq_oe = 1'b0;
+                dq_oe <= #(tAC_MAX) 1'b0;
             end else begin
                 col       = next_col(burst.start_col, burst.index, burst.len, burst.interleaved);
                 data_read = mem_read(burst.bank, burst.row, col);
                 read_dqm  = dqm_pipe[1];
 
-                dq_out = data_read;
-                dq_oe  = 1'b1;
+                outgoing = data_read;
+                if (read_dqm[0]) outgoing[7:0]  = 8'hzz;
+                if (read_dqm[1]) outgoing[15:8] = 8'hzz;
 
-                if (read_dqm[0]) dq_out[7:0]  = 8'hzz;
-                if (read_dqm[1]) dq_out[15:8] = 8'hzz;
+                dq_out <= #(tAC_MAX) outgoing;
+                dq_oe  <= #(tAC_MAX) 1'b1;
 
                 if (DEBUG) begin
                     $display("%0t %s READ bank=%0d row=%0d col=%0d data=%04h dqm_latency2=%b",
@@ -1310,7 +1318,7 @@ module as4c32m16sb_6tin_chip_model #(
         if (burst.active && burst.is_read) begin
             advance_read_burst();
         end else begin
-            dq_oe = 1'b0;
+            dq_oe <= #(tAC_MAX) 1'b0;
         end
 
         if (DEBUG && cmd != CMD_NOP && cmd != CMD_DESL) begin
