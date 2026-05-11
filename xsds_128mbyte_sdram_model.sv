@@ -212,9 +212,9 @@ module xsds_128mbyte_sdram_model #(
                     end
 
                     chip_local_word = global_word_idx[24:0];
-                    bank = chip_local_word[24:23];
-                    row  = chip_local_word[22:10];
-                    col  = chip_local_word[9:0];
+                    bank = int'(chip_local_word[24:23]);
+                    row  = int'(chip_local_word[22:10]);
+                    col  = int'(chip_local_word[9:0]);
 
                     if (global_word_idx[25] == 1'b0) begin
                         u_chip0.poke(bank, row, col, value);
@@ -1223,9 +1223,9 @@ module as4c32m16sb_6tin_chip_model #(
         end
 
         cmd            = decode_cmd(Cs_n, Ras_n, Cas_n, We_n, Cke);
-        bank           = Ba;
-        row            = Addr[ROW_BITS-1:0];
-        col            = Addr[COL_BITS-1:0];
+        bank           = int'(Ba);
+        row            = int'(Addr[ROW_BITS-1:0]);
+        col            = int'(Addr[COL_BITS-1:0]);
         auto_precharge = Addr[10];
         precharge_all  = Addr[10];
 
@@ -1478,11 +1478,11 @@ module as4c32m16sb_6tin_chip_model #(
 
             $fdisplay(fd, "// %s memory dump @ %0t", CHIP_NAME, $time);
             count = 0;
-            if (mem.first(k)) begin
+            if (mem.first(k) != 0) begin
                 do begin
                     $fdisplay(fd, "%07h %04h", k, mem[k]);
                     count++;
-                end while (mem.next(k));
+                end while (mem.next(k) != 0);
             end
             $fclose(fd);
 

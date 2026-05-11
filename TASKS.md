@@ -60,8 +60,8 @@ These are the rules MiSTer-style controllers most commonly trip:
 
 ## Open-simulator coverage
 
-- [ ] **Verify Verilator build.** Should work on 4.220+ (queues, associative arrays, `parameter realtime`). Confirm. The `inout wire [15:0] Dq` may need `--timing` or careful tri-state handling at the testbench top depending on TB style.
-- [ ] **CI smoke test under Verilator** with `--lint-only` so regressions on Verilator compatibility are caught fast.
+- [x] ~~**Verify Verilator build.**~~ Confirmed against Verilator 5.048 (April 2026). Queues, associative arrays, `parameter realtime`, and NBA intra-assignment delays all work as expected. Required tweaks: a tiny stub (`verilator/lint_stub.sv`) that makes Dq internal because Verilator does not support tristate at a top-level port, plus the `--bbox-unsup` flag because Verilator does not support the wrapper's inout pass-through through hierarchy either. With those, lint runs clean (no warnings, no errors). Three small width casts (`int'(...)`) and two `mem.first/next() != 0` rewrites in the model were needed to silence cosmetic WIDTHEXPAND / WIDTHTRUNC warnings.
+- [x] ~~**CI smoke test under Verilator** with `--lint-only`.~~ Added `verilator/Makefile` with a `lint` target. Run with `make -C verilator lint`. Drop-in for a CI job; exit non-zero on any new warning.
 - [ ] **Decide on GHDL strategy.** GHDL is VHDL-only; using this model with GHDL needs either mixed-language sim (fragile) or a VHDL port of the model (real project). Pick a direction or drop GHDL from the stated goals.
 
 ## Smaller cleanup
