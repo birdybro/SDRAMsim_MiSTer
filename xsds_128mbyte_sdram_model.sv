@@ -180,6 +180,7 @@ module as4c32m16sb_6tin_chip_model #(
     parameter realtime tRAS_MIN              = 42.0,
     parameter realtime tRAS_MAX              = 120_000.0,
     parameter realtime tWR_MIN               = 12.0,
+    parameter realtime tWTR_MIN              = 7.5,
     parameter realtime tIS_MIN               = 1.5,
     parameter realtime tREFI_MAX             = 7_800.0,
 
@@ -613,6 +614,11 @@ module as4c32m16sb_6tin_chip_model #(
                 Udqm
             );
 
+            // Stamp at every data cycle so tWR (write-to-precharge) and tWTR
+            // (write-to-read) measure from the LAST DQ input, not from the
+            // WRITE command. Matters once BL > 1.
+            last_write[burst.bank] = $realtime;
+
             burst.index++;
 
             if (!burst.full_page && burst.index >= burst.len) begin
@@ -855,6 +861,10 @@ module as4c32m16sb_6tin_chip_model #(
                            last_activate[bank],
                            tRCD_MIN);
 
+            check_time_min($sformatf("tWTR bank %0d WRITE-to-READ", bank),
+                           last_write[bank],
+                           tWTR_MIN);
+
             stop_burst();
 
             burst.active         = 1'b1;
@@ -921,8 +931,6 @@ module as4c32m16sb_6tin_chip_model #(
             burst.auto_precharge = auto_precharge;
             burst.full_page      = burst_full_page && !write_burst_single;
             burst.interleaved    = burst_interleaved;
-
-            last_write[bank] = $realtime;
 
             consume_write_data();
 

@@ -31,7 +31,7 @@ These were open architectural questions in earlier revisions of this file. Answe
 
 These are the rules MiSTer-style controllers most commonly trip:
 
-- [ ] **tWTR** — WRITE-to-READ recovery, same bank. `last_write[bank]` is stamped but only consulted by tWR (write-to-precharge). Add a `check_time_min` against `last_write[bank]` in `do_read`.
+- [x] ~~**tWTR** — WRITE-to-READ recovery, same bank.~~ Added: `tWTR_MIN` parameter (default 7.5 ns ≈ 1 tCK at the -6/-7 grade) and a `check_time_min` against `last_write[bank]` at the top of `do_read`. As part of this fix, `last_write[bank]` is now stamped inside `consume_write_data` on every data cycle instead of once at the WRITE command, so tWR (write-to-precharge) and tWTR both measure from the last DQ input — correct for BL > 1.
 - [ ] **tIS / tIH** — input setup/hold on Cs/Ras/Cas/We/Addr/Ba/DQM around `posedge Clk`. `tIS_MIN` parameter exists at `xsds_128mbyte_sdram_model.sv:181` but is only used in a tXSR derivation, never as an actual input-side check.
 - [ ] **tDS / tDH** — DQ setup/hold during writes. Not modeled.
 - [ ] **tAC / tOH / tHZ / tLZ** — read DQ output timing. Model currently drives DQ exactly on the clock edge with zero delay. Biggest IO-side gap: controllers can pass here and still fail closure on real silicon because the read-data window doesn't match.
