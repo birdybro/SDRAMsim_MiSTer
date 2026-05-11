@@ -296,6 +296,9 @@ module as4c32m16sb_6tin_chip_model #(
     parameter realtime tCCD_MIN              = 6.0,
     parameter realtime tXSR_MIN              = 70.0,
     parameter realtime tIS_MIN               = 1.5,
+    parameter realtime tIH_MIN               = 0.8,
+    parameter realtime tDS_MIN               = 1.5,
+    parameter realtime tDH_MIN               = 0.8,
     // Output access / Hi-Z propagation delay applied to DQ on the read path.
     // Used as a single approximation of tAC (CLK to data valid), tLZ (output
     // enable to driving) and tHZ (output disable to Hi-Z). Default 5.4 ns is
@@ -749,6 +752,14 @@ module as4c32m16sb_6tin_chip_model #(
         begin
             col = next_col(burst.start_col, burst.index, burst.len, burst.interleaved);
 
+            // tDS: Dq must have been stable for at least tDS_MIN before
+            // this posedge captured the write data. last_dq_sample records
+            // this capture edge so the @(Dq) block can check tDH on the
+            // next transition.
+            check_time_min("tDS on Dq during write",
+                           last_dq_change, tDS_MIN);
+            last_dq_sample = $realtime;
+
             mem_write(
                 burst.bank,
                 burst.row,
@@ -915,6 +926,72 @@ module as4c32m16sb_6tin_chip_model #(
             end
         end
     endtask
+
+    // -------------------------------------------------------------------------
+    // Input setup / hold tracking (tIS, tIH, tDS)
+    //
+    // Records the last transition timestamp for each command-pin group
+    // (command, address, DQ) and checks setup at posedge Clk plus hold at
+    // each subsequent transition. Aggregated per-group to keep the code
+    // compact; the violation message names the group rather than the
+    // specific signal, which is good enough for catching TB / controller
+    // bugs.
+    //
+    // All checks are gated on init_seen_cke_high so the pre-init / power-up
+    // window (when many TBs idle their signals without a defined transition
+    // history) does not generate spurious violations.
+    // -------------------------------------------------------------------------
+
+    realtime last_cmdpin_change   = -1.0e30;
+    realtime last_addrpin_change  = -1.0e30;
+    realtime last_dq_change       = -1.0e30;
+    realtime last_dq_sample       = -1.0e30;  // posedge of last write-data capture
+    // last_clk_posedge is shared with the clock-period checks block below.
+
+    task automatic check_input_hold(input string group, input realtime required);
+        realtime delta;
+        begin
+            if (last_clk_posedge > -1.0e20) begin
+                delta = $realtime - last_clk_posedge;
+                // delta == 0.0 means the signal changed via an NBA at the
+                // same simulation time as the posedge — the standard sync-
+                // logic pattern where real silicon's tCO propagation delay
+                // would put the actual change slightly after the edge.
+                // Behavioral sim can't tell that apart from a real tIH
+                // violation, so accept delta == 0 and only flag narrow-
+                // window changes in (0, tIH_MIN).
+                if (delta > 0.0 && delta < required) begin
+                    issue_error($sformatf("tIH on %s violation: delta=%0.3f ns, required=%0.3f ns",
+                                          group, delta, required));
+                end
+            end
+        end
+    endtask
+
+    always @(Cs_n or Ras_n or Cas_n or We_n) begin
+        if (init_seen_cke_high) check_input_hold("command pins", tIH_MIN);
+        last_cmdpin_change = $realtime;
+    end
+
+    always @(Ba or Addr or Ldqm or Udqm) begin
+        if (init_seen_cke_high) check_input_hold("address / DQM pins", tIH_MIN);
+        last_addrpin_change = $realtime;
+    end
+
+    always @(Dq) begin : dq_xition
+        realtime delta;
+        if (last_dq_sample > -1.0e20) begin
+            delta = $realtime - last_dq_sample;
+            // Same delta > 0.0 guard as tIH: NBA-at-posedge changes that
+            // happen to fall on the same simulation time as the capture
+            // edge are the standard sync pattern, not real tDH violations.
+            if (delta > 0.0 && delta < tDH_MIN) begin
+                issue_error($sformatf("tDH on Dq violation: delta=%0.3f ns, required=%0.3f ns",
+                                      delta, tDH_MIN));
+            end
+        end
+        last_dq_change = $realtime;
+    end
 
     // -------------------------------------------------------------------------
     // Command handlers
@@ -1264,6 +1341,19 @@ module as4c32m16sb_6tin_chip_model #(
         int unsigned col;
         bit auto_precharge;
         bit precharge_all;
+
+        // Setup checks: every command / address pin must have been stable
+        // for at least tIS_MIN before this edge. Gated on init_seen_cke_high
+        // so pre-init transients (which many TBs leave undefined) don't
+        // spam errors during the 200 us power-up window.
+        // (last_clk_posedge is updated by the tCL/tCH always block below
+        //  on the same edge, so the input-hold checks see it as $realtime.)
+        if (init_seen_cke_high) begin
+            check_time_min("tIS on command pins",
+                           last_cmdpin_change, tIS_MIN);
+            check_time_min("tIS on address / DQM pins",
+                           last_addrpin_change, tIS_MIN);
+        end
 
         // X-prop check on command pins. decode_cmd's bit-typed args silently
         // coerce X/Z to 0, which would let undefined controller outputs
