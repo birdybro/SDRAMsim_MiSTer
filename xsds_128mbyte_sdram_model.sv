@@ -148,6 +148,68 @@ module xsds_128mbyte_sdram_model #(
         end
     endtask
 
+    // Load a contiguous ROM image into the 128 MB module starting at
+    // byte address `byte_base`. One 16-bit hex value per line; the file
+    // may straddle the 64 MB chip boundary at byte 0x0400_0000 (word
+    // index 2^25) — words on each side are dispatched to the matching
+    // chip's poke task.
+    task automatic module_load_rom_hex(
+        input string             filename,
+        input longint unsigned   byte_base
+    );
+        int                fd;
+        string             line;
+        logic [15:0]       value;
+        longint unsigned   global_word_idx;
+        logic [24:0]       chip_local_word;
+        int unsigned       loaded;
+        int unsigned       bank;
+        int unsigned       row;
+        int unsigned       col;
+        begin
+            fd = $fopen(filename, "r");
+            if (fd == 0) begin
+                $error("xsds module_load_rom_hex: failed to open '%s'", filename);
+                return;
+            end
+
+            if (byte_base[0]) begin
+                $error("xsds module_load_rom_hex: byte_base=%0d is not 16-bit aligned",
+                       byte_base);
+                $fclose(fd);
+                return;
+            end
+
+            global_word_idx = byte_base >> 1;
+            loaded = 0;
+
+            while ($fgets(line, fd) != 0) begin
+                if ($sscanf(line, "%h", value) == 1) begin
+                    if (global_word_idx >= (longint'(1) << 26)) begin
+                        $error("xsds module_load_rom_hex: word offset %0d exceeds 128 MB capacity",
+                               global_word_idx);
+                        break;
+                    end
+
+                    chip_local_word = global_word_idx[24:0];
+                    bank = chip_local_word[24:23];
+                    row  = chip_local_word[22:10];
+                    col  = chip_local_word[9:0];
+
+                    if (global_word_idx[25] == 1'b0) begin
+                        u_chip0.poke(bank, row, col, value);
+                    end else begin
+                        u_chip1.poke(bank, row, col, value);
+                    end
+
+                    global_word_idx++;
+                    loaded++;
+                end
+            end
+            $fclose(fd);
+        end
+    endtask
+
 endmodule
 
 
@@ -1383,6 +1445,49 @@ module as4c32m16sb_6tin_chip_model #(
             if (DEBUG) begin
                 $display("%0t %s loaded %0d entries from '%s'",
                          $time, CHIP_NAME, loaded, filename);
+            end
+        end
+    endtask
+
+    // Load a contiguous ROM image into this chip starting at `word_base`,
+    // one 16-bit value per non-blank/non-comment line of `filename` (the
+    // standard $readmemh-style format, minus the @address syntax). word_base
+    // is a chip-local 25-bit word address: bits [24:23]=bank, [22:10]=row,
+    // [9:0]=col, matching make_key().
+    task automatic load_rom_hex(input string filename, input int unsigned word_base);
+        int          fd;
+        string       line;
+        data_t       value;
+        logic [24:0] word_idx;
+        int unsigned loaded;
+        begin
+            fd = $fopen(filename, "r");
+            if (fd == 0) begin
+                $error("%s: load_rom_hex failed to open '%s' for read",
+                       CHIP_NAME, filename);
+                return;
+            end
+
+            word_idx = word_base[24:0];
+            loaded   = 0;
+
+            while ($fgets(line, fd) != 0) begin
+                if ($sscanf(line, "%h", value) == 1) begin
+                    if ((word_base + loaded) >= (1 << 25)) begin
+                        $error("%s: load_rom_hex word %0d overflows chip (32M words)",
+                               CHIP_NAME, word_base + loaded);
+                        break;
+                    end
+                    mem[mem_key_t'(word_idx)] = value;
+                    word_idx++;
+                    loaded++;
+                end
+            end
+            $fclose(fd);
+
+            if (DEBUG) begin
+                $display("%0t %s load_rom_hex loaded %0d words from '%s' (word_base=%0d)",
+                         $time, CHIP_NAME, loaded, filename, word_base);
             end
         end
     endtask
