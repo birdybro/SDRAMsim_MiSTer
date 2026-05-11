@@ -42,7 +42,21 @@ SMOKE_SOURCES := \
 	$(ROOT)/xsds_cs1_adapter.sv \
 	$(ROOT)/xsds_128mbyte_sdram_model.sv
 
-.PHONY: lint smoke clean
+MEMTEST_FLAGS := \
+	--binary \
+	--sv \
+	--timing \
+	--bbox-unsup \
+	-Wno-fatal \
+	--top-module xsds_tb_memtest
+
+MEMTEST_SOURCES := \
+	$(ROOT)/verilator/altddio_out_stub.sv \
+	$(ROOT)/ref/MiSTer\ SDRAM\ Controller\ Modules/MemTest_MiSTer/rtl/sdram.v \
+	$(ROOT)/xsds_tb_memtest.sv \
+	$(ROOT)/xsds_128mbyte_sdram_model.sv
+
+.PHONY: lint smoke memtest clean
 
 lint:
 	$(VERILATOR) $(LINT_FLAGS) $(LINT_SOURCES)
@@ -50,6 +64,10 @@ lint:
 smoke:
 	$(VERILATOR) $(SMOKE_FLAGS) $(SMOKE_SOURCES)
 	./obj_dir/Vxsds_tb_shim
+
+memtest:
+	$(VERILATOR) $(MEMTEST_FLAGS) $(MEMTEST_SOURCES)
+	./obj_dir/Vxsds_tb_memtest
 
 clean:
 	rm -rf obj_dir
