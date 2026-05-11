@@ -153,6 +153,19 @@ module xsds_128mbyte_sdram_model #(
     // may straddle the 64 MB chip boundary at byte 0x0400_0000 (word
     // index 2^25) — words on each side are dispatched to the matching
     // chip's poke task.
+    // Aggregate violation counts across both chips. issue_error / issue_warn
+    // in the chip model bump these on every violation regardless of whether
+    // STRICT_TIMING downgrades $error to $warning, so a testbench can do
+    //   if (dut.module_error_count() != 0) $fatal;
+    // at end-of-test without parsing simulator output.
+    function automatic int unsigned module_error_count();
+        module_error_count = u_chip0.error_count + u_chip1.error_count;
+    endfunction
+
+    function automatic int unsigned module_warning_count();
+        module_warning_count = u_chip0.warning_count + u_chip1.warning_count;
+    endfunction
+
     task automatic module_load_rom_hex(
         input string             filename,
         input longint unsigned   byte_base
@@ -805,8 +818,21 @@ module as4c32m16sb_6tin_chip_model #(
     // Diagnostics and timing helpers
     // -------------------------------------------------------------------------
 
+    // TB-readable counters. Bumped on every issue_error / issue_warn call,
+    // regardless of whether STRICT_TIMING routes the violation to $error or
+    // downgrades it to $warning. Lets a testbench assert no-violations at
+    // end-of-test without parsing simulator output.
+    int unsigned error_count;
+    int unsigned warning_count;
+
+    initial begin
+        error_count   = 0;
+        warning_count = 0;
+    end
+
     task automatic issue_error(input string msg);
         begin
+            error_count++;
             if (STRICT_TIMING) begin
                 $error("%0t %s %s", $time, CHIP_NAME, msg);
             end else begin
@@ -817,6 +843,7 @@ module as4c32m16sb_6tin_chip_model #(
 
     task automatic issue_warn(input string msg);
         begin
+            warning_count++;
             $warning("%0t %s %s", $time, CHIP_NAME, msg);
         end
     endtask
