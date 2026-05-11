@@ -688,6 +688,7 @@ module as4c32m16sb_6tin_chip_model #(
 
     task automatic advance_read_burst();
         int unsigned col;
+        int unsigned ap_trigger_idx;
         data_t data_read;
         data_t outgoing;
         logic [1:0] read_dqm;
@@ -715,6 +716,20 @@ module as4c32m16sb_6tin_chip_model #(
                 end
 
                 burst.index++;
+
+                // Real silicon launches a READ+AP's implied PRECHARGE about
+                // BL-CL cycles into the burst (so tRP overlaps the trailing
+                // CL data cycles and a same-bank ACT can come sooner).
+                // Trigger AP after max(1, BL-CL) data cycles have been
+                // output; remaining cycles still drive Dq from the snapshot.
+                if (burst.auto_precharge && !burst.full_page) begin
+                    ap_trigger_idx = (burst.len > cas_latency) ?
+                                     (burst.len - cas_latency) : 1;
+                    if (burst.index >= ap_trigger_idx) begin
+                        do_precharge(burst.bank, 1'b0, "auto-precharge (read)");
+                        burst.auto_precharge = 1'b0;
+                    end
+                end
 
                 if (!burst.full_page && burst.index >= burst.len) begin
                     maybe_auto_precharge(burst.bank);
