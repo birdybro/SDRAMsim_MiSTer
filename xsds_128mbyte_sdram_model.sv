@@ -192,6 +192,7 @@ module as4c32m16sb_6tin_chip_model #(
     parameter realtime tRAS_MAX              = 120_000.0,
     parameter realtime tWR_MIN               = 12.0,
     parameter realtime tWTR_MIN              = 7.5,
+    parameter realtime tCCD_MIN              = 6.0,
     parameter realtime tIS_MIN               = 1.5,
     parameter realtime tREFI_MAX             = 7_800.0,
 
@@ -355,6 +356,7 @@ module as4c32m16sb_6tin_chip_model #(
     realtime last_refresh;
     realtime last_mrs;
     realtime last_self_refresh_exit;
+    realtime last_col_cmd;
 
     initial begin
         int i;
@@ -372,6 +374,7 @@ module as4c32m16sb_6tin_chip_model #(
         last_refresh           = -1.0e30;
         last_mrs               = -1.0e30;
         last_self_refresh_exit = -1.0e30;
+        last_col_cmd           = -1.0e30;
     end
 
     function automatic bit all_banks_idle();
@@ -868,6 +871,10 @@ module as4c32m16sb_6tin_chip_model #(
                 issue_error($sformatf("READ to inactive bank %0d", bank));
             end
 
+            check_time_min("tCCD READ/WRITE-to-READ",
+                           last_col_cmd,
+                           tCCD_MIN);
+
             check_time_min($sformatf("tRCD bank %0d ACT-to-READ", bank),
                            last_activate[bank],
                            tRCD_MIN);
@@ -875,6 +882,8 @@ module as4c32m16sb_6tin_chip_model #(
             check_time_min($sformatf("tWTR bank %0d WRITE-to-READ", bank),
                            last_write[bank],
                            tWTR_MIN);
+
+            last_col_cmd = $realtime;
 
             stop_burst();
 
@@ -922,9 +931,15 @@ module as4c32m16sb_6tin_chip_model #(
                 issue_error($sformatf("WRITE to inactive bank %0d", bank));
             end
 
+            check_time_min("tCCD READ/WRITE-to-WRITE",
+                           last_col_cmd,
+                           tCCD_MIN);
+
             check_time_min($sformatf("tRCD bank %0d ACT-to-WRITE", bank),
                            last_activate[bank],
                            tRCD_MIN);
+
+            last_col_cmd = $realtime;
 
             stop_burst();
 

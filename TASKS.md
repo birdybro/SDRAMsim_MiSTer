@@ -36,7 +36,7 @@ These are the rules MiSTer-style controllers most commonly trip:
 - [ ] **tDS / tDH** — DQ setup/hold during writes. Not modeled.
 - [ ] **tAC / tOH / tHZ / tLZ** — read DQ output timing. Model currently drives DQ exactly on the clock edge with zero delay. Biggest IO-side gap: controllers can pass here and still fail closure on real silicon because the read-data window doesn't match.
 - [ ] **tXP / tCKS** — power-down exit timing and CKE setup before SREF/PD entry. Not modeled. **Note**: CKE is tied to VCC on the XSDS board, so this can never trigger for the XSDS use case. Only relevant for non-XSDS standalone use of the chip model. Lower priority than other timing checks.
-- [ ] **tCCD** — column-to-column command spacing. Not enforced.
+- [x] ~~**tCCD** — column-to-column command spacing.~~ Added: `tCCD_MIN` parameter (default 6.0 ns ≈ 1 tCK at -6) plus a global `last_col_cmd` timestamp stamped by both `do_read` and `do_write`. The check fires on any READ/WRITE pair (cross-bank or same-bank) issued closer than `tCCD_MIN`. In practice satisfied trivially when the clock period meets tCK_MIN; main value is making the parameter set explicit and giving slower-grade overrides somewhere to land.
 
 ## Behavioral subtleties that diverge from real silicon
 
