@@ -25,16 +25,7 @@ These were open architectural questions in earlier revisions of this file. Answe
 
 ## Bugs
 
-- [ ] **Sequential burst column wrap is wrong for BL ∈ {2, 4, 8}.** `next_col` at `xsds_128mbyte_sdram_model.sv:467` does `(start_col + index) & (COLS - 1)` on the sequential branch, which wraps at the page boundary (1024) regardless of burst length. JEDEC SDR sequential bursts wrap inside the BL-aligned block — a BL=4 burst starting at col 6 should produce 6,7,4,5, but the model produces 6,7,8,9.
-  - Fix: keep base/offset like the interleaved branch but use `+` instead of `^`:
-    ```sv
-    low_mask = len - 1;
-    base     = start_col & ~low_mask;
-    offset   = (start_col + index) & low_mask;
-    next_col = (base | offset) & (COLS - 1);
-    ```
-  - Collapses to the existing page-wrap formula when `len == FULL_PAGE_LEN`, so full-page bursts remain correct.
-  - **Real-world impact is narrow**: in the 91-controller corpus only ~4 use BL=2/4 (Arcade-IremM62, Arcade-IremM90, Arcade-MCR2, Arcade-IremM92) and none use BL=8 or interleaved. The BL=1 majority and the full-page-burst minority both work correctly today. Still a real correctness bug — fix it, but don't expect it to unblock the bring-up of most cores.
+- [x] ~~**Sequential burst column wrap is wrong for BL ∈ {2, 4, 8}.**~~ Fixed: `next_col` sequential branch now uses `(base | offset) & (COLS - 1)` with `base = start_col & ~(len-1)` and `offset = (start_col + index) & (len-1)`, mirroring the interleaved branch but with `+` instead of `^`. Wraps inside the BL-aligned block per JEDEC; collapses to the page-wrap formula at `len == FULL_PAGE_LEN`.
 
 ## Missing timing checks (high value for controller tuning)
 

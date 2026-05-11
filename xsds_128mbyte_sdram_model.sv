@@ -484,7 +484,10 @@ module as4c32m16sb_6tin_chip_model #(
                 offset   = (start_col ^ index) & low_mask;
                 next_col = (base | offset) & (COLS - 1);
             end else begin
-                next_col = (start_col + index) & (COLS - 1);
+                low_mask = len - 1;
+                base     = start_col & ~low_mask;
+                offset   = (start_col + index) & low_mask;
+                next_col = (base | offset) & (COLS - 1);
             end
         end
     endfunction
