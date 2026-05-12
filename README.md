@@ -16,10 +16,12 @@ commercial simulators.
   controllers stay untouched while still being able to address the full
   128 MB through a 1-bit `ctrl_chip` signal.
 - `xsds_tb_shim.sv`, `xsds_tb_memtest.sv`, `xsds_tb_neogeo.sv`,
-  `xsds_tb_nes.sv`, `xsds_tb_saturn.sv` — bring-up testbenches. The `_shim`
-  one drives synthetic stim; the others drive real MiSTer-core SDRAM
-  controllers (pulled into `ref/MiSTer SDRAM Controller Modules/`) against
-  the chip model. Saturn is the first CL=3 target; the rest are CL=2.
+  `xsds_tb_nes.sv`, `xsds_tb_saturn.sv`, `xsds_tb_psx.sv` — bring-up
+  testbenches. The `_shim` one drives synthetic stim; the others drive
+  real MiSTer-core SDRAM controllers (pulled into
+  `ref/MiSTer SDRAM Controller Modules/`) against the chip model. Saturn
+  is the first CL=3 target; PSX is the first BL=2 target; the rest are
+  CL=2 / BL∈{1,4}.
 - `verilator/` — Verilator-specific Makefile + lint stub +
   `altddio_out_stub.sv` (sim-only stand-in for the Altera vendor IP MiSTer
   cores use to derive `DRAM_CLK`).
@@ -103,6 +105,7 @@ A small Makefile in `verilator/` exposes:
 | `make -C verilator neogeo`  | build & run `NeoGeo_MiSTer`'s SDRAM controller (the load-bearing case for chip-2 coverage) |
 | `make -C verilator nes`     | build & run `NES_MiSTer`'s SDRAM controller through the adapter |
 | `make -C verilator saturn`  | build & run `Saturn_MiSTer`'s SDRAM controller (first CL=3 bring-up) |
+| `make -C verilator psx`     | build & run `PSX_MiSTer`'s SDRAM controller (first BL=2 bring-up; uses a sim-only patched copy at `verilator/psx_sdram_for_verilator.sv` — see CLAUDE.md for the why) |
 
 All four pass clean as of this writing. Verilator-side caveats: tristate at
 top-level ports is unsupported (the smoke / bring-up TBs hide DQ inside

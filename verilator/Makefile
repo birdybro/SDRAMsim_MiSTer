@@ -99,7 +99,21 @@ SATURN_SOURCES := \
 	$(ROOT)/xsds_tb_saturn.sv \
 	$(ROOT)/xsds_128mbyte_sdram_model.sv
 
-.PHONY: lint smoke memtest neogeo nes saturn clean
+PSX_FLAGS := \
+	--binary \
+	--sv \
+	--timing \
+	--bbox-unsup \
+	-Wno-fatal \
+	--top-module xsds_tb_psx
+
+PSX_SOURCES := \
+	$(ROOT)/verilator/altddio_out_stub.sv \
+	$(ROOT)/verilator/psx_sdram_for_verilator.sv \
+	$(ROOT)/xsds_tb_psx.sv \
+	$(ROOT)/xsds_128mbyte_sdram_model.sv
+
+.PHONY: lint smoke memtest neogeo nes saturn psx clean
 
 lint:
 	$(VERILATOR) $(LINT_FLAGS) $(LINT_SOURCES)
@@ -123,6 +137,10 @@ nes:
 saturn:
 	$(VERILATOR) $(SATURN_FLAGS) $(SATURN_SOURCES)
 	./obj_dir/Vxsds_tb_saturn
+
+psx:
+	$(VERILATOR) $(PSX_FLAGS) $(PSX_SOURCES)
+	./obj_dir/Vxsds_tb_psx
 
 clean:
 	rm -rf obj_dir
