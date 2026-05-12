@@ -85,7 +85,21 @@ NES_SOURCES := \
 	$(ROOT)/xsds_tb_nes.sv \
 	$(ROOT)/xsds_128mbyte_sdram_model.sv
 
-.PHONY: lint smoke memtest neogeo nes clean
+SATURN_FLAGS := \
+	--binary \
+	--sv \
+	--timing \
+	--bbox-unsup \
+	-Wno-fatal \
+	--top-module xsds_tb_saturn
+
+SATURN_SOURCES := \
+	$(ROOT)/verilator/altddio_out_stub.sv \
+	$(ROOT)/ref/MiSTer\ SDRAM\ Controller\ Modules/Saturn_MiSTer/rtl/sdram1.sv \
+	$(ROOT)/xsds_tb_saturn.sv \
+	$(ROOT)/xsds_128mbyte_sdram_model.sv
+
+.PHONY: lint smoke memtest neogeo nes saturn clean
 
 lint:
 	$(VERILATOR) $(LINT_FLAGS) $(LINT_SOURCES)
@@ -105,6 +119,10 @@ neogeo:
 nes:
 	$(VERILATOR) $(NES_FLAGS) $(NES_SOURCES)
 	./obj_dir/Vxsds_tb_nes
+
+saturn:
+	$(VERILATOR) $(SATURN_FLAGS) $(SATURN_SOURCES)
+	./obj_dir/Vxsds_tb_saturn
 
 clean:
 	rm -rf obj_dir
